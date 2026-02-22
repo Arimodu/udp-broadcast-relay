@@ -67,20 +67,13 @@ func Run(cfg *config.Config, version string) error {
 	}()
 
 	// Start broadcast listeners for enabled rules
+	bcMgr := NewBroadcastManager(ctx, s.hub, db, log)
 	rules, err := db.ListEnabledRules()
 	if err != nil {
 		return fmt.Errorf("loading rules: %w", err)
 	}
 	for _, rule := range rules {
-		if rule.Direction == "client_to_server" {
-			continue // server doesn't capture for client-to-server rules
-		}
-		bc := NewBroadcastCapture(rule, s.hub, db, log)
-		go func() {
-			if err := bc.Listen(ctx); err != nil && ctx.Err() == nil {
-				log.Error("broadcast capture error", "rule", rule.Name, "error", err)
-			}
-		}()
+		bcMgr.Sync(rule)
 	}
 
 	// Start broadcast monitor
@@ -101,7 +94,7 @@ func Run(cfg *config.Config, version string) error {
 	}
 
 	// Start WebUI
-	s.webui = NewWebUI(cfg.Server.WebUIPort, db, s.hub, log, checker)
+	s.webui = NewWebUI(cfg.Server.WebUIPort, db, s.hub, log, checker, bcMgr)
 	go func() {
 		if err := s.webui.Serve(ctx); err != nil && ctx.Err() == nil {
 			log.Error("webui error", "error", err)

@@ -5,10 +5,69 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
 	"github.com/Arimodu/udp-broadcast-relay/internal/protocol"
 )
+
+// BroadcastManager dynamically starts and stops per-rule capture goroutines.
+// All methods are safe for concurrent use.
+type BroadcastManager struct {
+	mu        sync.Mutex
+	active    map[int64]context.CancelFunc
+	hub       *Hub
+	db        *database.DB
+	log       *slog.Logger
+	parentCtx context.Context
+}
+
+func NewBroadcastManager(ctx context.Context, hub *Hub, db *database.DB, log *slog.Logger) *BroadcastManager {
+	return &BroadcastManager{
+		active:    make(map[int64]context.CancelFunc),
+		hub:       hub,
+		db:        db,
+		log:       log,
+		parentCtx: ctx,
+	}
+}
+
+// Sync stops any existing capture for the rule and, if the rule is enabled
+// and not client_to_server, starts a new one. Safe to call on create,
+// update, and toggle.
+func (m *BroadcastManager) Sync(rule database.ForwardRule) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Always stop any running capture for this rule first
+	if cancel, ok := m.active[rule.ID]; ok {
+		cancel()
+		delete(m.active, rule.ID)
+	}
+
+	if !rule.IsEnabled || rule.Direction == "client_to_server" {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(m.parentCtx)
+	m.active[rule.ID] = cancel
+	bc := NewBroadcastCapture(rule, m.hub, m.db, m.log)
+	go func() {
+		if err := bc.Listen(ctx); err != nil && ctx.Err() == nil {
+			m.log.Error("broadcast capture error", "rule", rule.Name, "error", err)
+		}
+	}()
+}
+
+// Stop terminates the capture goroutine for the given rule ID, if running.
+func (m *BroadcastManager) Stop(ruleID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cancel, ok := m.active[ruleID]; ok {
+		cancel()
+		delete(m.active, ruleID)
+	}
+}
 
 type BroadcastCapture struct {
 	rule database.ForwardRule

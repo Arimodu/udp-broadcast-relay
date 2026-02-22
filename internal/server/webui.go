@@ -25,11 +25,12 @@ type WebUI struct {
 	log     *slog.Logger
 	auth    *auth.Service
 	sess    *SessionStore
-	updater *updater.Checker // nil when update checking is disabled
+	updater *updater.Checker  // nil when update checking is disabled
+	bcMgr   *BroadcastManager // dynamically manages per-rule captures
 	server  *http.Server
 }
 
-func NewWebUI(port int, db *database.DB, hub *Hub, log *slog.Logger, checker *updater.Checker) *WebUI {
+func NewWebUI(port int, db *database.DB, hub *Hub, log *slog.Logger, checker *updater.Checker, bcMgr *BroadcastManager) *WebUI {
 	return &WebUI{
 		port:    port,
 		db:      db,
@@ -38,6 +39,7 @@ func NewWebUI(port int, db *database.DB, hub *Hub, log *slog.Logger, checker *up
 		auth:    auth.NewService(db),
 		sess:    NewSessionStore(db),
 		updater: checker,
+		bcMgr:   bcMgr,
 	}
 }
 
@@ -299,6 +301,7 @@ func (w *WebUI) handleCreateRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.bcMgr.Sync(*rule)
 	w.log.Info("rule created", "name", rule.Name, "port", rule.ListenPort)
 	jsonResponse(rw, rule)
 }
@@ -327,6 +330,11 @@ func (w *WebUI) handleUpdateRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-sync capture with updated rule config
+	if rule, err := w.db.GetRule(id); err == nil && rule != nil {
+		w.bcMgr.Sync(*rule)
+	}
+
 	jsonResponse(rw, map[string]bool{"success": true})
 }
 
@@ -342,6 +350,7 @@ func (w *WebUI) handleDeleteRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.bcMgr.Stop(id)
 	jsonResponse(rw, map[string]bool{"success": true})
 }
 
@@ -355,6 +364,11 @@ func (w *WebUI) handleToggleRule(rw http.ResponseWriter, r *http.Request) {
 	if err := w.db.ToggleRule(id); err != nil {
 		jsonError(rw, "database error", http.StatusInternalServerError)
 		return
+	}
+
+	// Sync capture state with new enabled/disabled status
+	if rule, err := w.db.GetRule(id); err == nil && rule != nil {
+		w.bcMgr.Sync(*rule)
 	}
 
 	jsonResponse(rw, map[string]bool{"success": true})
