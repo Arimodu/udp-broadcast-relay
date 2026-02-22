@@ -1,0 +1,38 @@
+# Build output
+dist/
+ubr
+ubr.exe
+
+# Go test and benchmark artifacts
+*.test
+*.out
+coverage.html
+
+# Compiled object files
+*.o
+*.a
+
+# SQLite databases (dev/test instances)
+*.db
+*.sqlite
+*.sqlite3
+
+# Config files with secrets (dev copies)
+config.toml
+*.local.toml
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go workspace
+go.work
+go.work.sum

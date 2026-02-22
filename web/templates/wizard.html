@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UBR - Setup Wizard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>UDP Broadcast Relay - Setup Wizard</h1>
+    </header>
+    <main id="wizard">
+        <div id="steps">
+            <div class="step-indicator" id="stepIndicator">
+                <!-- populated by wizard.js based on mode -->
+            </div>
+        </div>
+
+        <!-- Step 0: Mode selection -->
+        <section id="step0" class="wizard-step">
+            <h2>Welcome to UBR Setup</h2>
+            <p>What are you setting up?</p>
+            <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:1rem;">
+                <button id="modeServer" style="flex:1; padding:1.5rem; font-size:1.1rem;">
+                    <strong>Server</strong><br>
+                    <span class="text-muted" style="font-size:0.9rem; font-weight:normal;">
+                        Captures broadcast traffic and relays it to clients.<br>
+                        Creates admin account and WebUI.
+                    </span>
+                </button>
+                <button id="modeClient" style="flex:1; padding:1.5rem; font-size:1.1rem;">
+                    <strong>Client</strong><br>
+                    <span class="text-muted" style="font-size:0.9rem; font-weight:normal;">
+                        Receives broadcasts from the server and rebroadcasts locally.<br>
+                        Requires an API key from the server WebUI.
+                    </span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 1 (Server): Admin Account -->
+        <section id="step1" class="wizard-step" style="display:none;">
+            <h2>Create Admin Account</h2>
+            <form id="adminForm">
+                <label for="adminUser">Username</label>
+                <input type="text" id="adminUser" required autofocus>
+                <label for="adminPass">Password</label>
+                <input type="password" id="adminPass" required>
+                <label for="adminPassConfirm">Confirm Password</label>
+                <input type="password" id="adminPassConfirm" required>
+                <p id="adminError" style="color: var(--color-danger, red); display: none;"></p>
+                <button type="submit">Next</button>
+            </form>
+        </section>
+
+        <!-- Step 1 (Client): Server connection -->
+        <section id="step1c" class="wizard-step" style="display:none;">
+            <h2>Connect to Server</h2>
+            <form id="clientConnForm">
+                <label for="clientServerAddr">Server address (host:port)</label>
+                <input type="text" id="clientServerAddr" placeholder="10.0.0.1:14723" required autofocus>
+
+                <fieldset style="margin: 1rem 0; border: 1px solid var(--border, #ccc); padding: 0.75rem 1rem;">
+                    <legend>Authentication</legend>
+                    <div style="display:flex; gap:1.5rem; margin-bottom:0.75rem;">
+                        <label style="font-weight:normal;">
+                            <input type="radio" name="clientAuthMethod" id="authMethodApiKey" value="apikey" checked>
+                            API key
+                        </label>
+                        <label style="font-weight:normal;">
+                            <input type="radio" name="clientAuthMethod" id="authMethodCreds" value="credentials">
+                            Username &amp; password
+                        </label>
+                    </div>
+
+                    <div id="authApiKeySection">
+                        <label for="clientAPIKey">API key</label>
+                        <input type="text" id="clientAPIKey" placeholder="ubr_...">
+                        <p class="text-muted" style="font-size:0.85rem; margin-top:0.25rem;">
+                            Create one in the server WebUI under <strong>API Keys</strong>.
+                        </p>
+                    </div>
+
+                    <div id="authCredSection" style="display:none;">
+                        <label for="clientUsername">Username</label>
+                        <input type="text" id="clientUsername" autocomplete="username">
+                        <label for="clientPassword">Password</label>
+                        <input type="password" id="clientPassword" autocomplete="current-password">
+                        <p class="text-muted" style="font-size:0.85rem; margin-top:0.25rem;">
+                            The server generates an API key on first connect and saves it to config automatically.
+                        </p>
+                    </div>
+                </fieldset>
+
+                <label for="clientIfaces">Rebroadcast interfaces (comma-separated, empty = all)</label>
+                <input type="text" id="clientIfaces" placeholder="eth0,eth1">
+                <p id="clientConnError" style="color: var(--color-danger, red); display: none;"></p>
+                <button type="submit">Next</button>
+            </form>
+        </section>
+
+        <!-- Step 2: Network Interface -->
+        <section id="step2" class="wizard-step" style="display:none;">
+            <h2>Select Network Interface</h2>
+            <p>Choose the interface to listen for broadcast traffic on.</p>
+            <select id="ifaceSelect" size="6" style="width: 100%;"></select>
+            <br><br>
+            <button id="step2Back" type="button">Back</button>
+            <button id="step2Next" type="button">Next</button>
+        </section>
+
+        <!-- Step 3: Broadcast Discovery -->
+        <section id="step3" class="wizard-step" style="display:none;">
+            <h2>Discover Broadcast Traffic</h2>
+            <p>Listening for broadcast packets on the network. Select which ones to create forwarding rules for.</p>
+            <div id="discoveryStatus">
+                <p><em>Scanning... detected broadcasts will appear below.</em></p>
+            </div>
+            <table id="discoveryTable">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll"></th>
+                        <th>Protocol</th>
+                        <th>Dest Port</th>
+                        <th>Source</th>
+                        <th>Count</th>
+                    </tr>
+                </thead>
+                <tbody id="discoveryBody"></tbody>
+            </table>
+            <br>
+            <button id="step3Back" type="button">Back</button>
+            <button id="step3Skip" type="button">Skip (configure later)</button>
+            <button id="step3Next" type="button">Next</button>
+        </section>
+
+        <!-- Step 4 (Server): Systemd Service -->
+        <section id="step4" class="wizard-step" style="display:none;">
+            <h2>System Service</h2>
+            <p>Would you like to install UBR as a systemd service?</p>
+            <label>
+                <input type="checkbox" id="installSystemd" checked>
+                Install and enable systemd service (start on boot)
+            </label>
+            <br><br>
+            <button id="step4Back" type="button">Back</button>
+            <button id="step4Next" type="button">Next</button>
+        </section>
+
+        <!-- Step 2 (Client): Systemd Service -->
+        <section id="step2c" class="wizard-step" style="display:none;">
+            <h2>System Service</h2>
+            <p>Would you like to install UBR client as a systemd service?</p>
+            <label>
+                <input type="checkbox" id="installSystemdClient" checked>
+                Install and enable systemd service (start on boot)
+            </label>
+            <br><br>
+            <button id="step2cBack" type="button">Back</button>
+            <button id="step2cNext" type="button">Next</button>
+        </section>
+
+        <!-- Step 5 (Server) / Step 3c (Client): Summary -->
+        <section id="step5" class="wizard-step" style="display:none;">
+            <h2>Summary</h2>
+            <table id="summaryTable">
+                <tbody id="summaryBody">
+                </tbody>
+            </table>
+            <br>
+            <button id="step5Back" type="button">Back</button>
+            <button id="step5Save" type="button"><strong>Save &amp; Finish</strong></button>
+            <div id="saveResult" style="display: none;"></div>
+        </section>
+    </main>
+    <script>window.UBR_INITIAL_MODE = '{{.Mode}}';</script>
+    <script src="/static/js/wizard.js"></script>
+</body>
+</html>

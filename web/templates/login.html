@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UBR - Login</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>UDP Broadcast Relay</h1>
+    </header>
+    <main>
+        <article style="max-width: 400px; margin: 2rem auto;">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus>
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+                <button type="submit">Login</button>
+                <p id="error" style="color: var(--color-danger, red); display: none;"></p>
+            </form>
+        </article>
+    </main>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errEl = document.getElementById('error');
+            errEl.style.display = 'none';
+
+            const resp = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value
+                })
+            });
+
+            const data = await resp.json();
+            if (data.success) {
+                window.location.href = '/';
+            } else {
+                errEl.textContent = data.error || 'Login failed';
+                errEl.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

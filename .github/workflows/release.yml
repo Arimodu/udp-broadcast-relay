@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Determine version
+        id: version
+        run: |
+          BASE=$(tr -d '[:space:]' < VERSION)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${BASE}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building ${VERSION}"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build all targets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          LDFLAGS: -s -w -X main.version=${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+
+          build() {
+            local goos="$1" goarch="$2" goarm="${3:-}"
+            local name="ubr-${goos}-${goarch}"
+            [[ "$goos" == "windows" ]] && name="${name}.exe"
+            printf "  %-20s ->  dist/%s\n" "${goos}/${goarch}" "${name}"
+            GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
+              go build -trimpath -ldflags="$LDFLAGS" -o "dist/${name}" ./cmd/ubr
+          }
+
+          build linux   amd64
+          build linux   arm64
+          build linux   arm    7
+          build windows amd64
+          build darwin  amd64
+          build darwin  arm64
+
+          echo
+          echo "Generating checksums..."
+          (cd dist && sha256sum ubr-* > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: UBR ${{ steps.version.outputs.version }}
+          body: |
+            ## UDP Broadcast Relay ${{ steps.version.outputs.version }}
+
+            Built from commit ${{ github.sha }}.
+
+            ### Downloads
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x86-64 | `ubr-linux-amd64` |
+            | Linux ARM64 | `ubr-linux-arm64` |
+            | Linux ARMv7 (Raspberry Pi) | `ubr-linux-arm` |
+            | Windows x86-64 | `ubr-windows-amd64.exe` |
+            | macOS x86-64 | `ubr-darwin-amd64` |
+            | macOS Apple Silicon | `ubr-darwin-arm64` |
+
+            Verify downloads against `SHA256SUMS`.
+
+            ### Notable: raw socket features (broadcast capture, source IP preservation, AF_PACKET monitor)
+            are Linux-only. Windows and macOS builds compile but those features are gracefully disabled.
+          files: |
+            dist/ubr-linux-amd64
+            dist/ubr-linux-arm64
+            dist/ubr-linux-arm
+            dist/ubr-windows-amd64.exe
+            dist/ubr-darwin-amd64
+            dist/ubr-darwin-arm64
+            dist/SHA256SUMS
+          make_latest: true
+          generate_release_notes: false

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UBR - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/">
+                <strong>UBR</strong>
+            </a>
+            <ul>
+                <li><a href="/" data-page="dashboard">Dashboard</a></li>
+                <li><a href="/rules" data-page="rules">Rules</a></li>
+                <li><a href="/packets" data-page="packets">Packets</a></li>
+                <li><a href="/monitor" data-page="monitor">Monitor</a></li>
+                <li><a href="/keys" data-page="keys">API Keys</a></li>
+                <li><a href="/settings" data-page="settings">Settings</a></li>
+            </ul>
+            <ul>
+                <li>
+                    <span id="currentUser">{{.Username}}</span>
+                    <a href="#" id="logoutBtn">Logout</a>
+                </li>
+            </ul>
+        </nav>
+    </header>
+    <main id="app">
+        <p>Loading...</p>
+    </main>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
