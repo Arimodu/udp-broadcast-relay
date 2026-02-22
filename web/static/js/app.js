@@ -107,19 +107,25 @@
             html += '<p class="text-muted">No clients connected.</p>';
         } else {
             html += `<table>
-                <thead><tr><th>Name</th><th>Address</th><th>Connected</th><th>Last Seen</th><th>Sent</th><th>Received</th><th>Status</th></tr></thead>
+                <thead><tr><th>Name</th><th>Address</th><th>Version</th><th>Connected</th><th>Last Seen</th><th>Sent</th><th>Received</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>`;
             for (const c of clients) {
                 const statusClass = c.online ? 'status-online' : 'status-offline';
                 const statusText = c.online ? 'Online' : 'Offline';
+                const version = escapeHtml(c.version || 'unknown');
+                const updateBtn = c.online
+                    ? `<button onclick="ubrUpdateClient(${c.key_id})" style="padding:2px 8px;font-size:0.85em">Update</button>`
+                    : '';
                 html += `<tr>
                     <td>${escapeHtml(c.key_name)}</td>
                     <td>${escapeHtml(c.addr)}</td>
+                    <td>${version}</td>
                     <td>${timeAgo(c.connect_at)}</td>
                     <td>${timeAgo(c.last_seen)}</td>
                     <td>${formatBytes(c.bytes_sent)}</td>
                     <td>${formatBytes(c.bytes_recv)}</td>
                     <td class="${statusClass}">${statusText}</td>
+                    <td>${updateBtn}</td>
                 </tr>`;
             }
             html += '</tbody></table>';
@@ -202,6 +208,12 @@
             renderRules();
         });
     }
+
+    window.ubrUpdateClient = async function(keyId) {
+        if (!confirm('Send update command to this client? It will download and install the latest version, then restart.')) return;
+        const result = await api(`/clients/${keyId}/update`, 'POST');
+        if (result) alert('Update command sent. The client will restart shortly.');
+    };
 
     window.ubrToggleRule = async function(id) {
         await api(`/rules/${id}/toggle`, 'PUT');

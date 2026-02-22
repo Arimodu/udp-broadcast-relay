@@ -8,12 +8,14 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Arimodu/udp-broadcast-relay/internal/auth"
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
+	"github.com/Arimodu/udp-broadcast-relay/internal/protocol"
 	"github.com/Arimodu/udp-broadcast-relay/internal/updater"
 	"github.com/Arimodu/udp-broadcast-relay/web"
 )
@@ -87,6 +89,7 @@ func (w *WebUI) Serve(ctx context.Context) error {
 	mux.HandleFunc("GET /api/update/status", w.requireAuth(w.handleUpdateStatus))
 	mux.HandleFunc("POST /api/update/check", w.requireAuth(w.handleUpdateCheck))
 	mux.HandleFunc("POST /api/update/apply", w.requireAuth(w.handleUpdateApply))
+	mux.HandleFunc("POST /api/clients/{key_id}/update", w.requireAuth(w.handleSendClientUpdate))
 
 	// SPA catch-all (serve index.html for all non-API, non-static routes)
 	mux.HandleFunc("GET /", w.requireAuthPage(w.handleSPA))
@@ -709,6 +712,35 @@ func (w *WebUI) handleUpdateApply(rw http.ResponseWriter, r *http.Request) {
 	}
 	w.log.Info("update applied", "message", msg)
 	jsonResponse(rw, map[string]string{"message": msg})
+
+	// On Unix the binary has been replaced; restart the process automatically.
+	if runtime.GOOS != "windows" {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			w.log.Info("restarting server after update")
+			if err := updater.Restart(); err != nil {
+				w.log.Error("restart failed", "error", err)
+			}
+		}()
+	}
+}
+
+func (w *WebUI) handleSendClientUpdate(rw http.ResponseWriter, r *http.Request) {
+	keyIDStr := r.PathValue("key_id")
+	keyID, err := strconv.ParseInt(keyIDStr, 10, 64)
+	if err != nil {
+		jsonError(rw, "invalid key_id", http.StatusBadRequest)
+		return
+	}
+
+	sent := w.hub.SendToClient(keyID, sendMsg{msgType: protocol.MsgUpdateCommand})
+	if !sent {
+		jsonError(rw, "client not connected or send buffer full", http.StatusNotFound)
+		return
+	}
+
+	w.log.Info("update command sent to client", "key_id", keyID)
+	jsonResponse(rw, map[string]string{"message": "update command sent"})
 }
 
 // JSON helpers

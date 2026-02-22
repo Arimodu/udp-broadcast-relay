@@ -13,11 +13,13 @@ import (
 	"github.com/Arimodu/udp-broadcast-relay/internal/config"
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
 	"github.com/Arimodu/udp-broadcast-relay/internal/protocol"
+	"github.com/Arimodu/udp-broadcast-relay/internal/updater"
 )
 
 type Connection struct {
 	cfg        *config.Config
 	configPath string
+	version    string
 	// username and password are only set when the user authenticated with
 	// credentials instead of an API key. They are cleared (and never written to
 	// disk) as soon as the server returns a generated API key.
@@ -29,10 +31,11 @@ type Connection struct {
 	rules     []database.ForwardRule
 }
 
-func NewConnection(cfg *config.Config, configPath, username, password string, rebroadCh chan RebroadcastPacket, log *slog.Logger) *Connection {
+func NewConnection(cfg *config.Config, configPath, username, password, version string, rebroadCh chan RebroadcastPacket, log *slog.Logger) *Connection {
 	return &Connection{
 		cfg:        cfg,
 		configPath: configPath,
+		version:    version,
 		username:   username,
 		password:   password,
 		rebroadCh:  rebroadCh,
@@ -134,6 +137,16 @@ func (c *Connection) connectAndRun(ctx context.Context) error {
 			}
 		}
 
+		// Send client info so the server knows our version.
+		if c.version != "" {
+			infoJSON, _ := json.Marshal(map[string]string{"version": c.version})
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := protocol.WriteFrame(conn, protocol.MsgClientInfo, infoJSON); err != nil {
+				c.log.Warn("sending client info", "error", err)
+			}
+			conn.SetWriteDeadline(time.Time{})
+		}
+
 	case protocol.MsgAuthFail:
 		return fmt.Errorf("authentication failed: %s", string(payload))
 
@@ -216,6 +229,10 @@ func (c *Connection) readPump(ctx context.Context, reader *bufio.Reader, conn ne
 			c.rules = rules
 			c.log.Info("rules updated from server", "count", len(rules))
 
+		case protocol.MsgUpdateCommand:
+			c.log.Info("update command received from server")
+			go c.handleUpdateCommand()
+
 		default:
 			c.log.Debug("unknown message type", "type", fmt.Sprintf("0x%02x", msgType))
 		}
@@ -248,5 +265,29 @@ func (c *Connection) writePump(ctx context.Context, conn net.Conn) {
 				return
 			}
 		}
+	}
+}
+
+func (c *Connection) handleUpdateCommand() {
+	c.log.Info("checking for update to apply")
+	checker := updater.New(c.version)
+	if err := checker.Check(); err != nil {
+		c.log.Error("update check failed", "error", err)
+		return
+	}
+	available, latest, _ := checker.Status()
+	if !available {
+		c.log.Info("no update available, ignoring update command")
+		return
+	}
+	c.log.Info("update available, applying", "version", latest.Version)
+	msg, err := checker.Apply()
+	if err != nil {
+		c.log.Error("update apply failed", "error", err)
+		return
+	}
+	c.log.Info("update applied, restarting", "message", msg)
+	if err := updater.Restart(); err != nil {
+		c.log.Error("restart failed", "error", err)
 	}
 }

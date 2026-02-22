@@ -31,7 +31,7 @@ type RebroadcastPacket struct {
 	Payload []byte
 }
 
-func Run(cfg *config.Config, configPath string) error {
+func Run(cfg *config.Config, configPath, version string) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(cfg.Client.LogLevel),
 	}))
@@ -80,7 +80,7 @@ func Run(cfg *config.Config, configPath string) error {
 
 	go c.rebroadcastLoop(ctx)
 
-	conn := NewConnection(cfg, configPath, username, password, c.rebroadCh, log)
+	conn := NewConnection(cfg, configPath, username, password, version, c.rebroadCh, log)
 	c.conn = conn
 
 	log.Info("client starting", "server", cfg.Client.ServerAddress)

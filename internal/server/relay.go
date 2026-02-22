@@ -262,6 +262,15 @@ func (rl *RelayListener) readPump(ctx context.Context, reader *bufio.Reader, con
 		case protocol.MsgPong:
 			// Already updated LastSeen above
 
+		case protocol.MsgClientInfo:
+			var info struct {
+				Version string `json:"version"`
+			}
+			if err := json.Unmarshal(payload, &info); err == nil && info.Version != "" {
+				client.Version.Store(info.Version)
+				rl.log.Debug("client info received", "key", client.KeyName, "version", info.Version)
+			}
+
 		case protocol.MsgRelayPacket:
 			// Client is sending a broadcast packet (bidirectional / client_to_server rule)
 			client.BytesRecv.Add(int64(len(payload)))

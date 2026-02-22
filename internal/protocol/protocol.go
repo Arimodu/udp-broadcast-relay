@@ -14,8 +14,10 @@ const (
 	MsgAuthOK          uint8 = 0x11 // S→C: JSON {"api_key":"...","rules":[...]}
 	MsgAuthFail        uint8 = 0x12 // S→C: error string
 	MsgAuthCredentials uint8 = 0x13 // C→S: JSON {"username":"...","password":"..."}
+	MsgClientInfo      uint8 = 0x14 // C→S: JSON {"version":"..."} sent after AuthOK
 	MsgRelayPacket     uint8 = 0x20
 	MsgRuleUpdate      uint8 = 0x30
+	MsgUpdateCommand   uint8 = 0x40 // S→C: instruct client to self-update and restart
 )
 
 // Frame format: [4 bytes length][1 byte type][payload...]

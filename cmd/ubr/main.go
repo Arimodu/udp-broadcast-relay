@@ -90,7 +90,7 @@ func runClient(args []string) {
 		os.Exit(1)
 	}
 
-	if err := client.Run(cfg, *configPath); err != nil {
+	if err := client.Run(cfg, *configPath, version); err != nil {
 		fmt.Fprintf(os.Stderr, "Client error: %v\n", err)
 		os.Exit(1)
 	}

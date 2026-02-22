@@ -30,8 +30,15 @@ type ClientConn struct {
 	Rules     []database.ForwardRule
 	ConnectAt time.Time
 	LastSeen  atomic.Value // time.Time
+	Version   atomic.Value // string — populated after MsgClientInfo received
 	BytesSent atomic.Int64
 	BytesRecv atomic.Int64
+}
+
+type directSendReq struct {
+	keyID int64
+	msg   sendMsg
+	reply chan bool
 }
 
 type Hub struct {
@@ -40,6 +47,7 @@ type Hub struct {
 	broadcast  chan *RelayMessage
 	snapshot   chan chan []ClientInfo // request/response for thread-safe snapshot
 	ruleUpdate chan ruleUpdateReq
+	directSend chan directSendReq
 	clients    map[int64]*ClientConn // keyed by API key ID
 	log        *slog.Logger
 	db         *database.DB
@@ -63,6 +71,7 @@ func NewHub(log *slog.Logger, db *database.DB) *Hub {
 		broadcast:  make(chan *RelayMessage, 256),
 		snapshot:   make(chan chan []ClientInfo),
 		ruleUpdate: make(chan ruleUpdateReq, 16),
+		directSend: make(chan directSendReq, 16),
 		clients:    make(map[int64]*ClientConn),
 		log:        log,
 		db:         db,
@@ -101,6 +110,19 @@ func (h *Hub) Run(ctx context.Context) {
 
 		case req := <-h.ruleUpdate:
 			h.doRuleUpdate(req)
+
+		case req := <-h.directSend:
+			client, ok := h.clients[req.keyID]
+			if ok {
+				select {
+				case client.SendCh <- req.msg:
+					req.reply <- true
+				default:
+					req.reply <- false
+				}
+			} else {
+				req.reply <- false
+			}
 		}
 	}
 }
@@ -137,12 +159,14 @@ func (h *Hub) buildSnapshot() []ClientInfo {
 	infos := make([]ClientInfo, 0)
 	for _, c := range h.clients {
 		lastSeen, _ := c.LastSeen.Load().(time.Time)
+		version, _ := c.Version.Load().(string)
 		infos = append(infos, ClientInfo{
 			KeyID:     c.ID,
 			KeyName:   c.KeyName,
 			Addr:      c.Addr.String(),
 			ConnectAt: c.ConnectAt,
 			LastSeen:  lastSeen,
+			Version:   version,
 			BytesSent: c.BytesSent.Load(),
 			BytesRecv: c.BytesRecv.Load(),
 			Online:    time.Since(lastSeen) < 45*time.Second,
@@ -196,12 +220,21 @@ func (h *Hub) PushRuleUpdate(keyID int64, rules []database.ForwardRule) {
 	h.ruleUpdate <- ruleUpdateReq{KeyID: keyID, Rules: rules}
 }
 
+// SendToClient sends an arbitrary message directly to one client by key ID.
+// Returns true if the message was enqueued, false if client not found or buffer full.
+func (h *Hub) SendToClient(keyID int64, msg sendMsg) bool {
+	reply := make(chan bool, 1)
+	h.directSend <- directSendReq{keyID: keyID, msg: msg, reply: reply}
+	return <-reply
+}
+
 type ClientInfo struct {
 	KeyID     int64     `json:"key_id"`
 	KeyName   string    `json:"key_name"`
 	Addr      string    `json:"addr"`
 	ConnectAt time.Time `json:"connect_at"`
 	LastSeen  time.Time `json:"last_seen"`
+	Version   string    `json:"version"`
 	BytesSent int64     `json:"bytes_sent"`
 	BytesRecv int64     `json:"bytes_recv"`
 	Online    bool      `json:"online"`
