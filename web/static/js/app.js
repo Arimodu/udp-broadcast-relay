@@ -274,14 +274,14 @@
                 <thead><tr><th>Protocol</th><th>Source</th><th>Dest Port</th><th>Count</th><th>Last Seen</th><th>Has Rule</th><th>Action</th></tr></thead>
                 <tbody>`;
             for (const o of observations) {
-                const hasRule = o.HasRule ? '<span class="badge badge-enabled">Yes</span>' : '<span class="badge badge-disabled">No</span>';
-                const action = o.HasRule ? '' : `<button class="btn-small" onclick="ubrCreateRuleFromMonitor('${escapeHtml(o.ProtocolType)}', ${o.DstPort})">Create Rule</button>`;
+                const hasRule = o.has_rule ? '<span class="badge badge-enabled">Yes</span>' : '<span class="badge badge-disabled">No</span>';
+                const action = o.has_rule ? '' : `<button class="btn-small" onclick="ubrCreateRuleFromMonitor('${escapeHtml(o.protocol_type)}', ${o.dst_port})">Create Rule</button>`;
                 html += `<tr>
-                    <td><strong>${escapeHtml(o.ProtocolType)}</strong></td>
-                    <td>${escapeHtml(o.SrcIP)}</td>
-                    <td>${o.DstPort}</td>
-                    <td>${o.Count}</td>
-                    <td>${timeAgo(o.LastSeen)}</td>
+                    <td><strong>${escapeHtml(o.protocol_type)}</strong></td>
+                    <td>${escapeHtml(o.src_ip)}</td>
+                    <td>${o.dst_port}</td>
+                    <td>${o.count}</td>
+                    <td>${timeAgo(o.last_seen)}</td>
                     <td>${hasRule}</td>
                     <td>${action}</td>
                 </tr>`;
@@ -295,9 +295,9 @@
         }, 3000);
     }
 
-    window.ubrCreateRuleFromMonitor = async function(protocol, port) {
+    window.ubrCreateRuleFromMonitor = async function(protocolName, port) {
         await api('/rules', 'POST', {
-            name: protocol + ' (port ' + port + ')',
+            name: protocolName + ' (port ' + port + ')',
             listen_port: port,
             direction: 'server_to_client',
         });

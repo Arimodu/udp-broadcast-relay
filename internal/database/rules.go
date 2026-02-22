@@ -74,7 +74,7 @@ func (d *DB) ListEnabledRules() ([]ForwardRule, error) {
 }
 
 func scanRules(rows *sql.Rows) ([]ForwardRule, error) {
-	var rules []ForwardRule
+	rules := make([]ForwardRule, 0)
 	for rows.Next() {
 		var r ForwardRule
 		var isEnabled int

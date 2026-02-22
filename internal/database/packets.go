@@ -46,7 +46,7 @@ func (d *DB) GetPacketLog(limit, offset int, ruleID *int64) ([]PacketLogEntry, i
 	}
 	defer rows.Close()
 
-	var entries []PacketLogEntry
+	entries := make([]PacketLogEntry, 0)
 	for rows.Next() {
 		var e PacketLogEntry
 		var ruleIDVal sql.NullInt64
@@ -102,7 +102,7 @@ func (d *DB) GetBroadcastObservations() ([]BroadcastObservation, error) {
 	}
 	defer rows.Close()
 
-	var observations []BroadcastObservation
+	observations := make([]BroadcastObservation, 0)
 	for rows.Next() {
 		var o BroadcastObservation
 		var hasRule int

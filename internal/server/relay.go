@@ -178,7 +178,7 @@ func (rl *RelayListener) handleConnection(ctx context.Context, conn net.Conn) {
 		KeyName:   ak.Name,
 		UserID:    user.ID,
 		Addr:      conn.RemoteAddr(),
-		SendCh:    make(chan []byte, 256),
+		SendCh:    make(chan sendMsg, 256),
 		Rules:     rules,
 		ConnectAt: now,
 	}
@@ -218,12 +218,12 @@ func (rl *RelayListener) writePump(ctx context.Context, conn net.Conn, client *C
 		case <-ctx.Done():
 			return
 
-		case data, ok := <-client.SendCh:
+		case msg, ok := <-client.SendCh:
 			if !ok {
 				return
 			}
 			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := protocol.WriteFrame(conn, protocol.MsgRelayPacket, data); err != nil {
+			if err := protocol.WriteFrame(conn, msg.msgType, msg.data); err != nil {
 				rl.log.Debug("write error", "key", client.KeyName, "error", err)
 				return
 			}

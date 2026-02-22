@@ -9,7 +9,16 @@ import (
 	"time"
 
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
+	"github.com/Arimodu/udp-broadcast-relay/internal/protocol"
 )
+
+// sendMsg carries a message type and payload for the write pump.
+// Using a typed wrapper avoids the writePump having to hard-code MsgRelayPacket
+// for all outbound messages (rule updates need MsgRuleUpdate instead).
+type sendMsg struct {
+	msgType uint8
+	data    []byte
+}
 
 // ClientConn represents an authenticated client connection in the hub.
 type ClientConn struct {
@@ -17,7 +26,7 @@ type ClientConn struct {
 	KeyName   string
 	UserID    int64
 	Addr      net.Addr
-	SendCh    chan []byte // channel for outgoing framed data
+	SendCh    chan sendMsg // channel for outgoing messages
 	Rules     []database.ForwardRule
 	ConnectAt time.Time
 	LastSeen  atomic.Value // time.Time
@@ -107,7 +116,7 @@ func (h *Hub) fanOut(msg *RelayMessage) {
 		}
 
 		select {
-		case client.SendCh <- msg.Data:
+		case client.SendCh <- sendMsg{msgType: protocol.MsgRelayPacket, data: msg.Data}:
 			client.BytesSent.Add(int64(len(msg.Data)))
 		default:
 			h.log.Warn("client send buffer full, dropping packet", "key", client.KeyName)
@@ -125,7 +134,7 @@ func (h *Hub) clientHasRule(client *ClientConn, ruleID uint32) bool {
 }
 
 func (h *Hub) buildSnapshot() []ClientInfo {
-	var infos []ClientInfo
+	infos := make([]ClientInfo, 0)
 	for _, c := range h.clients {
 		lastSeen, _ := c.LastSeen.Load().(time.Time)
 		infos = append(infos, ClientInfo{
@@ -157,7 +166,7 @@ func (h *Hub) doRuleUpdate(req ruleUpdateReq) {
 	}
 
 	select {
-	case client.SendCh <- rulesJSON:
+	case client.SendCh <- sendMsg{msgType: protocol.MsgRuleUpdate, data: rulesJSON}:
 	default:
 		h.log.Warn("could not push rule update, buffer full", "key", client.KeyName)
 	}
