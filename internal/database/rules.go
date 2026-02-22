@@ -145,6 +145,16 @@ func (d *DB) GetRulesForClient(keyID int64) ([]ForwardRule, error) {
 	return scanRules(rows)
 }
 
+// EnabledRuleCountForPort returns how many enabled rules listen on the given port.
+// Used to decide whether broadcast_observations.has_rule should be true or false.
+func (d *DB) EnabledRuleCountForPort(port int) (int, error) {
+	var count int
+	err := d.db.QueryRow(
+		`SELECT COUNT(*) FROM forward_rules WHERE listen_port = ? AND is_enabled = 1`, port,
+	).Scan(&count)
+	return count, err
+}
+
 func (d *DB) GetClientKeysForRule(ruleID int64) ([]int64, error) {
 	rows, err := d.db.Query(
 		`SELECT client_key_id FROM client_rules WHERE rule_id = ?`, ruleID,

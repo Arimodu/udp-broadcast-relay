@@ -262,6 +262,16 @@ func (w *WebUI) handleGetClients(rw http.ResponseWriter, r *http.Request) {
 	jsonResponse(rw, clients)
 }
 
+// syncObservationHasRule updates has_rule on any broadcast_observations rows
+// that match this port, based on whether at least one enabled rule now covers it.
+func (w *WebUI) syncObservationHasRule(port int) {
+	count, err := w.db.EnabledRuleCountForPort(port)
+	if err != nil {
+		return
+	}
+	w.db.UpdateObservationHasRule(0, port, count > 0)
+}
+
 // Rule handlers
 func (w *WebUI) handleGetRules(rw http.ResponseWriter, r *http.Request) {
 	rules, err := w.db.ListRules()
@@ -302,6 +312,7 @@ func (w *WebUI) handleCreateRule(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	w.bcMgr.Sync(*rule)
+	w.syncObservationHasRule(rule.ListenPort)
 	w.log.Info("rule created", "name", rule.Name, "port", rule.ListenPort)
 	jsonResponse(rw, rule)
 }
@@ -330,10 +341,13 @@ func (w *WebUI) handleUpdateRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Re-sync capture with updated rule config
+	// Re-sync capture and observation has_rule with updated rule config
 	if rule, err := w.db.GetRule(id); err == nil && rule != nil {
 		w.bcMgr.Sync(*rule)
+		w.syncObservationHasRule(rule.ListenPort)
 	}
+	// Also sync the old port in case listen_port changed
+	w.syncObservationHasRule(req.ListenPort)
 
 	jsonResponse(rw, map[string]bool{"success": true})
 }
@@ -345,12 +359,18 @@ func (w *WebUI) handleDeleteRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch port before deleting so we can update has_rule afterwards
+	rule, _ := w.db.GetRule(id)
+
 	if err := w.db.DeleteRule(id); err != nil {
 		jsonError(rw, "database error", http.StatusInternalServerError)
 		return
 	}
 
 	w.bcMgr.Stop(id)
+	if rule != nil {
+		w.syncObservationHasRule(rule.ListenPort)
+	}
 	jsonResponse(rw, map[string]bool{"success": true})
 }
 
@@ -366,9 +386,10 @@ func (w *WebUI) handleToggleRule(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sync capture state with new enabled/disabled status
+	// Sync capture state and has_rule with new enabled/disabled status
 	if rule, err := w.db.GetRule(id); err == nil && rule != nil {
 		w.bcMgr.Sync(*rule)
+		w.syncObservationHasRule(rule.ListenPort)
 	}
 
 	jsonResponse(rw, map[string]bool{"success": true})

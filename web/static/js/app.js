@@ -126,7 +126,7 @@
         }
         app.innerHTML = html;
 
-        refreshInterval = setInterval(() => {
+        refreshInterval = setTimeout(() => {
             if (currentPage === 'dashboard') renderDashboard();
         }, 5000);
     }
@@ -253,7 +253,7 @@
         document.getElementById('prevPackets')?.addEventListener('click', () => { packetOffset = Math.max(0, packetOffset - 50); renderPackets(); });
         document.getElementById('nextPackets')?.addEventListener('click', () => { packetOffset += 50; renderPackets(); });
 
-        refreshInterval = setInterval(() => {
+        refreshInterval = setTimeout(() => {
             if (currentPage === 'packets') renderPackets();
         }, 3000);
     }
@@ -290,7 +290,7 @@
         }
         app.innerHTML = html;
 
-        refreshInterval = setInterval(() => {
+        refreshInterval = setTimeout(() => {
             if (currentPage === 'monitor') renderMonitor();
         }, 3000);
     }
