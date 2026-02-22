@@ -11,6 +11,7 @@ import (
 
 	"github.com/Arimodu/udp-broadcast-relay/internal/config"
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
+	"github.com/Arimodu/udp-broadcast-relay/internal/updater"
 )
 
 type Server struct {
@@ -23,7 +24,7 @@ type Server struct {
 	log     *slog.Logger
 }
 
-func Run(cfg *config.Config) error {
+func Run(cfg *config.Config, version string) error {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(cfg.Server.LogLevel),
 	}))
@@ -92,8 +93,15 @@ func Run(cfg *config.Config) error {
 		}()
 	}
 
+	// Start update checker
+	var checker *updater.Checker
+	if cfg.Server.CheckUpdates {
+		checker = updater.New(version)
+		go s.updateCheckLoop(ctx, checker)
+	}
+
 	// Start WebUI
-	s.webui = NewWebUI(cfg.Server.WebUIPort, db, s.hub, log)
+	s.webui = NewWebUI(cfg.Server.WebUIPort, db, s.hub, log, checker)
 	go func() {
 		if err := s.webui.Serve(ctx); err != nil && ctx.Err() == nil {
 			log.Error("webui error", "error", err)
@@ -120,6 +128,36 @@ func Run(cfg *config.Config) error {
 	time.Sleep(2 * time.Second) // give goroutines time to drain
 
 	return nil
+}
+
+func (s *Server) updateCheckLoop(ctx context.Context, checker *updater.Checker) {
+	// Initial check after a short delay so startup isn't slowed down
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(30 * time.Second):
+	}
+	if err := checker.Check(); err != nil {
+		s.log.Warn("update check failed", "error", err)
+	} else {
+		available, latest, _ := checker.Status()
+		if available {
+			s.log.Info("update available", "latest", latest.Tag, "current", checker.CurrentVersion())
+		}
+	}
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := checker.Check(); err != nil {
+				s.log.Warn("update check failed", "error", err)
+			}
+		}
+	}
 }
 
 func (s *Server) cleanupLoop(ctx context.Context) {

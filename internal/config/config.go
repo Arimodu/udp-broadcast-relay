@@ -13,11 +13,12 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	WebUIPort int    `toml:"webui_port"`
-	RelayPort int    `toml:"relay_port"`
-	Interface string `toml:"interface"`
-	DataDir   string `toml:"data_dir"`
-	LogLevel  string `toml:"log_level"`
+	WebUIPort     int    `toml:"webui_port"`
+	RelayPort     int    `toml:"relay_port"`
+	Interface     string `toml:"interface"`
+	DataDir       string `toml:"data_dir"`
+	LogLevel      string `toml:"log_level"`
+	CheckUpdates  bool   `toml:"check_updates"`
 }
 
 type ClientConfig struct {
@@ -30,11 +31,12 @@ type ClientConfig struct {
 func Defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
-			WebUIPort: 21480,
-			RelayPort: 14723,
-			Interface: "",
-			DataDir:   "/var/lib/ubr",
-			LogLevel:  "info",
+			WebUIPort:    21480,
+			RelayPort:    14723,
+			Interface:    "",
+			DataDir:      "/var/lib/ubr",
+			LogLevel:     "info",
+			CheckUpdates: true,
 		},
 		Client: ClientConfig{
 			ServerAddress: "",

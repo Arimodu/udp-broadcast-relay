@@ -14,6 +14,7 @@ import (
 
 	"github.com/Arimodu/udp-broadcast-relay/internal/auth"
 	"github.com/Arimodu/udp-broadcast-relay/internal/database"
+	"github.com/Arimodu/udp-broadcast-relay/internal/updater"
 	"github.com/Arimodu/udp-broadcast-relay/web"
 )
 
@@ -24,17 +25,19 @@ type WebUI struct {
 	log     *slog.Logger
 	auth    *auth.Service
 	sess    *SessionStore
+	updater *updater.Checker // nil when update checking is disabled
 	server  *http.Server
 }
 
-func NewWebUI(port int, db *database.DB, hub *Hub, log *slog.Logger) *WebUI {
+func NewWebUI(port int, db *database.DB, hub *Hub, log *slog.Logger, checker *updater.Checker) *WebUI {
 	return &WebUI{
-		port: port,
-		db:   db,
-		hub:  hub,
-		log:  log,
-		auth: auth.NewService(db),
-		sess: NewSessionStore(db),
+		port:    port,
+		db:      db,
+		hub:     hub,
+		log:     log,
+		auth:    auth.NewService(db),
+		sess:    NewSessionStore(db),
+		updater: checker,
 	}
 }
 
@@ -77,6 +80,11 @@ func (w *WebUI) Serve(ctx context.Context) error {
 	mux.HandleFunc("PUT /api/keys/{id}/revoke", w.requireAuth(w.handleRevokeKey))
 
 	mux.HandleFunc("POST /api/settings/password", w.requireAuth(w.handleChangePassword))
+
+	// Update routes
+	mux.HandleFunc("GET /api/update/status", w.requireAuth(w.handleUpdateStatus))
+	mux.HandleFunc("POST /api/update/check", w.requireAuth(w.handleUpdateCheck))
+	mux.HandleFunc("POST /api/update/apply", w.requireAuth(w.handleUpdateApply))
 
 	// SPA catch-all (serve index.html for all non-API, non-static routes)
 	mux.HandleFunc("GET /", w.requireAuthPage(w.handleSPA))
@@ -596,6 +604,76 @@ func (w *WebUI) handleUnassignRule(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(rw, map[string]bool{"success": true})
+}
+
+// Update handlers
+
+type updateStatusResponse struct {
+	Enabled          bool       `json:"enabled"`
+	CurrentVersion   string     `json:"current_version"`
+	LatestVersion    string     `json:"latest_version,omitempty"`
+	LatestTag        string     `json:"latest_tag,omitempty"`
+	UpdateAvailable  bool       `json:"update_available"`
+	AssetAvailable   bool       `json:"asset_available"`
+	LastChecked      *time.Time `json:"last_checked,omitempty"`
+}
+
+func (w *WebUI) buildUpdateStatus() updateStatusResponse {
+	if w.updater == nil {
+		return updateStatusResponse{Enabled: false}
+	}
+	resp := updateStatusResponse{
+		Enabled:        true,
+		CurrentVersion: w.updater.CurrentVersion(),
+	}
+	available, latest, checked := w.updater.Status()
+	if !checked.IsZero() {
+		resp.LastChecked = &checked
+	}
+	if latest != nil {
+		resp.LatestVersion = latest.Version
+		resp.LatestTag = latest.Tag
+		resp.AssetAvailable = latest.AssetURL != ""
+	}
+	resp.UpdateAvailable = available
+	return resp
+}
+
+func (w *WebUI) handleUpdateStatus(rw http.ResponseWriter, r *http.Request) {
+	jsonResponse(rw, w.buildUpdateStatus())
+}
+
+func (w *WebUI) handleUpdateCheck(rw http.ResponseWriter, r *http.Request) {
+	if w.updater == nil {
+		jsonError(rw, "update checking is disabled (set check_updates = true in config)", http.StatusServiceUnavailable)
+		return
+	}
+	if err := w.updater.Check(); err != nil {
+		w.log.Warn("manual update check failed", "error", err)
+		jsonError(rw, fmt.Sprintf("update check failed: %v", err), http.StatusBadGateway)
+		return
+	}
+	jsonResponse(rw, w.buildUpdateStatus())
+}
+
+func (w *WebUI) handleUpdateApply(rw http.ResponseWriter, r *http.Request) {
+	if w.updater == nil {
+		jsonError(rw, "update checking is disabled", http.StatusServiceUnavailable)
+		return
+	}
+	available, _, _ := w.updater.Status()
+	if !available {
+		jsonError(rw, "no update available", http.StatusConflict)
+		return
+	}
+	msg, err := w.updater.Apply()
+	if err != nil {
+		w.log.Error("applying update failed", "error", err)
+		jsonError(rw, fmt.Sprintf("update failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.log.Info("update applied", "message", msg)
+	jsonResponse(rw, map[string]string{"message": msg})
 }
 
 // JSON helpers

@@ -426,6 +426,7 @@
                 <p id="passResult" style="display:none;"></p>
             </form>
         </article>`;
+        html += '<article id="updateCard"><h3>Updates</h3><p class="text-muted">Loading update status…</p></article>';
         app.innerHTML = html;
 
         document.getElementById('passwordForm').addEventListener('submit', async (e) => {
@@ -452,6 +453,92 @@
             } else {
                 resultEl.textContent = result?.error || 'Failed to change password';
                 resultEl.style.color = 'var(--color-danger)';
+            }
+            resultEl.style.display = 'block';
+        });
+
+        loadUpdateCard();
+    }
+
+    async function loadUpdateCard() {
+        const card = document.getElementById('updateCard');
+        if (!card) return;
+        const status = await api('/update/status');
+        if (!status) return;
+        renderUpdateCard(card, status);
+    }
+
+    function renderUpdateCard(card, s) {
+        let html = '<h3>Updates</h3>';
+
+        if (!s.enabled) {
+            html += '<p class="text-muted">Update checking is disabled. Set <code>check_updates = true</code> in the server config to enable it.</p>';
+            card.innerHTML = html;
+            return;
+        }
+
+        html += `<p><strong>Current version:</strong> ${escapeHtml(s.current_version)}</p>`;
+
+        if (s.last_checked) {
+            html += `<p class="text-muted">Last checked: ${timeAgo(s.last_checked)}</p>`;
+        } else {
+            html += `<p class="text-muted">Not yet checked this session.</p>`;
+        }
+
+        if (s.update_available) {
+            html += `<div class="alert alert-warning">
+                <strong>Update available:</strong> ${escapeHtml(s.latest_tag)}`;
+            if (!s.asset_available) {
+                html += `<br><span class="text-muted">No pre-built binary found for this platform — build from source.</span>`;
+            }
+            html += `</div>`;
+        } else if (s.latest_version) {
+            html += `<div class="alert alert-info">You are running the latest version (${escapeHtml(s.latest_version)}).</div>`;
+        }
+
+        html += `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">`;
+        html += `<button id="checkUpdateBtn">Check Now</button>`;
+        if (s.update_available && s.asset_available) {
+            html += `<button id="applyUpdateBtn">Update Now</button>`;
+        }
+        html += `</div>`;
+        html += `<p id="updateResult" style="display:none;margin-top:0.5rem;"></p>`;
+
+        card.innerHTML = html;
+
+        document.getElementById('checkUpdateBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('checkUpdateBtn');
+            const resultEl = document.getElementById('updateResult');
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
+            resultEl.style.display = 'none';
+            const fresh = await api('/update/check', 'POST');
+            if (fresh) {
+                renderUpdateCard(card, fresh);
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Check Now';
+                resultEl.textContent = 'Check failed.';
+                resultEl.style.color = 'var(--color-danger)';
+                resultEl.style.display = 'block';
+            }
+        });
+
+        document.getElementById('applyUpdateBtn')?.addEventListener('click', async () => {
+            if (!confirm(`Apply update ${s.latest_tag} and restart the server?`)) return;
+            const btn = document.getElementById('applyUpdateBtn');
+            const resultEl = document.getElementById('updateResult');
+            btn.disabled = true;
+            btn.textContent = 'Updating…';
+            const result = await api('/update/apply', 'POST');
+            if (result && result.message) {
+                resultEl.textContent = result.message;
+                resultEl.style.color = 'var(--color-success)';
+            } else {
+                resultEl.textContent = result?.error || 'Update failed.';
+                resultEl.style.color = 'var(--color-danger)';
+                btn.disabled = false;
+                btn.textContent = 'Update Now';
             }
             resultEl.style.display = 'block';
         });
